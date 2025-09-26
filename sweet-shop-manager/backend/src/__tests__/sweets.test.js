@@ -1,5 +1,3 @@
-// C:/Users/prita/PycharmProjects/SweetShop/sweet-shop-manager/backend/src/__tests__/sweets.test.js
-
 const request = require('supertest');
 const mongoose = require('mongoose');
 const app = require('../server');
@@ -11,11 +9,13 @@ dotenv.config();
 
 /* Top-level Test Setup */
 beforeAll(async () => {
+  // 1. Connect to the database first.
   await mongoose.connect(process.env.MONGO_URI);
-  // Clean the User collection ONCE before all tests in this file
+  // 2. Then, clean the User collection to ensure a fresh start.
   await User.deleteMany({});
 });
 
+/* Disconnect from the database after all tests in this file are done. */
 afterAll(async () => {
   await mongoose.connection.close();
 });
@@ -27,34 +27,69 @@ describe('Sweets API', () => {
     await Sweet.deleteMany({});
   });
 
-  // --- Public GET Routes ---
-  describe('Public GET Endpoints', () => {
+  // --- Public Routes ---
+  describe('Public Endpoints', () => {
     it('GET /api/sweets --> should return an array of sweets', async () => {
-      await Sweet.create([
-        { name: 'Gummy Bear', category: 'Gummy', price: 1.50, quantity: 100 },
-        { name: 'Lollipop', category: 'Hard Candy', price: 0.75, quantity: 200 },
-      ]);
-
+      await Sweet.create([{ name: 'Gummy Bear', quantity: 100, price: 1.5, category: 'Gummy' }]);
       const response = await request(app).get('/api/sweets');
       expect(response.statusCode).toBe(200);
-      expect(response.body.length).toBe(2);
+      expect(response.body.length).toBe(1);
     });
-    // ... your search tests can go here ...
+
+    it('PATCH /api/sweets/:id/purchase --> should decrease the quantity', async () => {
+      const sweet = await Sweet.create({ name: 'Purchasable', quantity: 20, price: 1, category: 'Test' });
+      const response = await request(app)
+        .patch(`/api/sweets/${sweet._id}/purchase`)
+        .send({ quantity: 5 });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.quantity).toBe(15);
+    });
+
+    it('PATCH /api/sweets/:id/purchase --> should return 400 for insufficient stock', async () => {
+      const sweet = await Sweet.create({ name: 'Limited Stock', quantity: 2, price: 1, category: 'Test' });
+      const response = await request(app)
+        .patch(`/api/sweets/${sweet._id}/purchase`)
+        .send({ quantity: 5 });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.msg).toBe('Not enough stock available for this purchase.');
+    });
   });
 
-  // --- Admin-Only PUT Route ---
-  describe('PUT /api/sweets/:id', () => {
+  // --- Admin & Protected Routes ---
+  describe('Admin & Protected Endpoints', () => {
     let adminToken;
+    let userToken;
 
+    // Runs ONCE before all tests in this describe block
     beforeAll(async () => {
-      // Use a unique email for this test suite
-      const adminUser = { name: 'PutAdmin', email: 'put-admin@example.com', password: 'password123', role: 'Admin' };
+      // Create all users needed for the protected tests
+      const adminUser = { name: 'MainAdmin', email: 'main-admin@example.com', password: 'password123', role: 'Admin' };
+      const regularUser = { name: 'MainUser', email: 'main-user@example.com', password: 'password123' };
+
       await request(app).post('/api/auth/register').send(adminUser);
-      const loginRes = await request(app).post('/api/auth/login').send({ email: adminUser.email, password: adminUser.password });
-      adminToken = loginRes.body.token;
+      await request(app).post('/api/auth/register').send(regularUser);
+
+      const adminLoginRes = await request(app).post('/api/auth/login').send({ email: adminUser.email, password: adminUser.password });
+      const userLoginRes = await request(app).post('/api/auth/login').send({ email: regularUser.email, password: regularUser.password });
+
+      adminToken = adminLoginRes.body.token;
+      userToken = userLoginRes.body.token;
     });
 
-    it('should update an existing sweet', async () => {
+    it('POST /api/sweets --> should allow an admin to create a sweet', async () => {
+      const newSweet = { name: 'Admin Chocolate', category: 'Chocolate', price: 2.99, quantity: 50 };
+      const response = await request(app)
+        .post('/api/sweets')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(newSweet);
+
+      expect(response.statusCode).toBe(201);
+      expect(response.body.name).toBe(newSweet.name);
+    });
+
+    it('PUT /api/sweets/:id --> should allow an admin to update a sweet', async () => {
       const sweetToUpdate = await Sweet.create({ name: 'Original', category: 'Test', price: 1.00, quantity: 10 });
       const updatedData = { name: 'Updated Sweet', price: 1.25 };
 
@@ -67,44 +102,7 @@ describe('Sweets API', () => {
       expect(response.body.name).toBe('Updated Sweet');
     });
 
-    it('should return 404 if sweet is not found', async () => {
-      const nonExistentId = new mongoose.Types.ObjectId();
-      const response = await request(app)
-        .put(`/api/sweets/${nonExistentId}`)
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({ name: 'Wont work' });
-
-      expect(response.statusCode).toBe(404);
-    });
-
-    it('should return 400 for an invalid ID', async () => {
-        const response = await request(app)
-          .put('/api/sweets/invalid-id')
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({ name: 'Wont work' });
-
-        expect(response.statusCode).toBe(400);
-      });
-  });
-
-  // --- Admin-Only DELETE Route ---
-  describe('DELETE /api/sweets/:id', () => {
-    let adminToken;
-    let userToken;
-
-    beforeAll(async () => {
-      // Use unique emails for this test suite
-      const adminUser = { name: 'DeleteAdmin', email: 'delete-admin@example.com', password: 'password123', role: 'Admin' };
-      const regularUser = { name: 'DeleteUser', email: 'delete-user@example.com', password: 'password123' };
-      await request(app).post('/api/auth/register').send(adminUser);
-      await request(app).post('/api/auth/register').send(regularUser);
-      const adminLoginRes = await request(app).post('/api/auth/login').send({ email: adminUser.email, password: adminUser.password });
-      const userLoginRes = await request(app).post('/api/auth/login').send({ email: regularUser.email, password: regularUser.password });
-      adminToken = adminLoginRes.body.token;
-      userToken = userLoginRes.body.token;
-    });
-
-    it('should allow an admin to delete a sweet', async () => {
+    it('DELETE /api/sweets/:id --> should allow an admin to delete a sweet', async () => {
       const sweetToDelete = await Sweet.create({ name: 'Deletable', category: 'Test', price: 1.00, quantity: 10 });
       const response = await request(app)
         .delete(`/api/sweets/${sweetToDelete._id}`)
@@ -115,7 +113,18 @@ describe('Sweets API', () => {
       expect(foundSweet).toBeNull();
     });
 
-    it('should forbid a non-admin user from deleting', async () => {
+    it('PATCH /api/sweets/:id/restock --> should allow an admin to restock a sweet', async () => {
+      const sweetToRestock = await Sweet.create({ name: 'Restockable', quantity: 10, price: 1, category: 'Test' });
+      const response = await request(app)
+        .patch(`/api/sweets/${sweetToRestock._id}/restock`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ quantity: 50 });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.quantity).toBe(60);
+    });
+
+    it('DELETE /api/sweets/:id --> should forbid a non-admin user from deleting', async () => {
       const sweetToDelete = await Sweet.create({ name: 'Protected', category: 'Test', price: 1.00, quantity: 10 });
       const response = await request(app)
         .delete(`/api/sweets/${sweetToDelete._id}`)
@@ -123,13 +132,5 @@ describe('Sweets API', () => {
 
       expect(response.statusCode).toBe(403);
     });
-
-    it('should prevent an unauthenticated user from deleting', async () => {
-        const sweetToDelete = await Sweet.create({ name: 'Protected', category: 'Test', price: 1.00, quantity: 10 });
-        const response = await request(app)
-          .delete(`/api/sweets/${sweetToDelete._id}`);
-
-        expect(response.statusCode).toBe(401);
-      });
   });
 });

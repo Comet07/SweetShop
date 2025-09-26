@@ -1,25 +1,28 @@
 const express = require('express');
 const router = express.Router();
-const { getAllSweets,
-    addSweet,
-    searchSweets,
-    updateSweet,
-    deleteSweet } = require('../controllers/sweetController');
+const {
+  getAllSweets,
+  addSweet,
+  searchSweets,
+  updateSweet,
+  deleteSweet,
+  purchaseSweet,
+  restockSweet // 1. Import the new restock function
+} = require('../controllers/sweetController');
 
-const { protect, authorize } = require('../middleware/authMiddleware')
+const { protect, authorize } = require('../middleware/authMiddleware');
 
-// ---Public Routes ---
+// --- Public Routes ---
 router.get('/', getAllSweets);
 router.get('/search', searchSweets);
+router.patch('/:id/purchase', purchaseSweet);
 
+// --- Admin-Only Routes ---
+router.post('/', protect, authorize('Admin'), addSweet);
+router.put('/:id', protect, authorize('Admin'), updateSweet);
+router.delete('/:id', protect, authorize('Admin'), deleteSweet);
 
-// ---Admin-Only---
+// 2. Add the new admin-only PATCH route for restocking
+router.patch('/:id/restock', protect, authorize('Admin'), restockSweet);
 
-// POST a new sweet
-router.post('/',protect, authorize('Admin') ,addSweet);
-//PUT a sweet by ID
-router.put('/:id',protect, authorize('Admin') ,updateSweet);
-
-//Delete a sweet by id
-router.delete('/:id',protect, authorize('Admin') ,deleteSweet);
 module.exports = router;
