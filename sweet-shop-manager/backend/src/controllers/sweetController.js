@@ -94,3 +94,30 @@ exports.updateSweet = async (req, res) => {
     res.status(500).send('Server Error');
   }
 };
+
+// @desc    Delete a sweet
+// @route   DELETE /api/sweets/:id
+// @access  Private/Admin
+exports.deleteSweet = async (req, res) => {
+  try {
+    const sweet = await Sweet.findById(req.params.id);
+
+    if (!sweet) {
+      return res.status(404).json({ msg: 'Sweet not found' });
+    }
+
+    // Mongoose v6+ uses deleteOne() on the document instance
+    await sweet.deleteOne();
+
+    res.status(200).json({ msg: 'Sweet removed' });
+  } catch (err) {
+    // Handle invalid ID format
+    if (err.name === 'CastError' && err.kind === 'ObjectId') {
+      return res.status(400).json({ msg: 'Invalid ID format' });
+    }
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+

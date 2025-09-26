@@ -1,17 +1,25 @@
 const express = require('express');
 const router = express.Router();
-const { getAllSweets, addSweet, searchSweets, updateSweet} = require('../controllers/sweetController');
+const { getAllSweets,
+    addSweet,
+    searchSweets,
+    updateSweet,
+    deleteSweet } = require('../controllers/sweetController');
 
-// GET all sweets
+const { protect, authorize } = require('../middleware/authMiddleware')
+
+// ---Public Routes ---
 router.get('/', getAllSweets);
-
-// GET /api/sweets/search - This route handles searching for sweets
 router.get('/search', searchSweets);
 
+
+// ---Admin-Only---
+
 // POST a new sweet
-router.post('/', addSweet);
-
+router.post('/',protect, authorize('Admin') ,addSweet);
 //PUT a sweet by ID
-router.put('/:id', updateSweet);
+router.put('/:id',protect, authorize('Admin') ,updateSweet);
 
+//Delete a sweet by id
+router.delete('/:id',protect, authorize('Admin') ,deleteSweet);
 module.exports = router;
